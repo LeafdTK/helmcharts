@@ -4,7 +4,7 @@ target-branch: main
 chart-dirs:
   - charts
 chart-repos:
-  - myrepo=oci://ghcr.io/tuananh/chart-repo-template/
+  - myrepo=oci://ghcr.io/leafdtk/helmcharts
 helm-extra-args: "--timeout 600s"  
 validate-chart-schema: false
 validate-maintainers: true

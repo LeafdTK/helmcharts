@@ -1,6 +1,3 @@
----
-# values.yaml
-# Default values for calcom
 replicaCount: 2
 
 image:
@@ -97,11 +94,12 @@ calcom:
   # Database configuration
   database:
     # Use external database (recommended for production)
-    external: false
-    host: ""
+    external: true
+    host: "postgresql.default.svc.cluster.local"
     port: 5432
     name: "calendso"
     user: "postgres"
+    password: "your-password-here"
     # Password will be taken from secrets
     existingSecret: ""
     passwordKey: "database-password"
@@ -138,9 +136,9 @@ calcom:
       clientId: ""
       clientSecret: ""
 
-# PostgreSQL subchart configuration
+# PostgreSQL subchart configuration (disabled by default - use external DB)
 postgresql:
-  enabled: true
+  enabled: false
   auth:
     postgresPassword: "changeme"
     username: "unicorn_user"
