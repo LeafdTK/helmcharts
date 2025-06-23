@@ -1,0 +1,19 @@
+{{- if .Values.prismaStudio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "calcom.fullname" . }}-studio
+  labels:
+    {{- include "calcom.labels" . | nindent 4 }}
+    app.kubernetes.io/component: studio
+spec:
+  type: {{ .Values.prismaStudio.service.type }}
+  ports:
+    - port: {{ .Values.prismaStudio.service.port }}
+      targetPort: 5555
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "calcom.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: studio
+{{- end }}

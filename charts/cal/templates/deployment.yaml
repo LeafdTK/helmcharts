@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "calcom.fullname" . }}
+  labels:
+    {{- include "calcom.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "calcom.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "calcom.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "calcom.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          env:
+            - name: NEXT_PUBLIC_WEBAPP_URL
+              value: {{ .Values.calcom.config.webappUrl }}
+            - name: NEXT_PUBLIC_API_V2_URL
+              value: {{ .Values.calcom.config.apiV2Url }}
+            - name: NEXTAUTH_URL
+              value: {{ .Values.calcom.config.nextAuthUrl | default (printf "%s/api/auth" .Values.calcom.config.webappUrl) }}
+            - name: NEXT_PUBLIC_WEBSITE_TERMS_URL
+              value: {{ .Values.calcom.config.websiteTermsUrl }}
+            - name: NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL
+              value: {{ .Values.calcom.config.websitePrivacyPolicyUrl }}
+            - name: NODE_ENV
+              value: {{ .Values.calcom.config.nodeEnv }}
+            - name: CALCOM_TELEMETRY_DISABLED
+              value: {{ .Values.calcom.telemetry.disabled | quote }}
+            - name: NEXT_PUBLIC_LICENSE_CONSENT
+              value: {{ .Values.calcom.license.consent | quote }}
+            - name: CALCOM_LICENSE_KEY
+              value: {{ .Values.calcom.license.key | quote }}
+            - name: DATABASE_URL
+              value: {{ include "calcom.databaseUrl" . }}
+            - name: DATABASE_DIRECT_URL
+              value: {{ include "calcom.databaseDirectUrl" . }}
+            - name: DATABASE_HOST
+              value: {{ include "calcom.databaseHost" . }}
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: nextauth-secret
+            - name: CALENDSO_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: encryption-key
+            {{- if .Values.calcom.secrets.email.serverHost }}
+            - name: EMAIL_FROM
+              value: {{ .Values.calcom.secrets.email.from }}
+            - name: EMAIL_FROM_NAME
+              value: {{ .Values.calcom.secrets.email.fromName }}
+            - name: EMAIL_SERVER_HOST
+              value: {{ .Values.calcom.secrets.email.serverHost }}
+            - name: EMAIL_SERVER_PORT
+              value: {{ .Values.calcom.secrets.email.serverPort | quote }}
+            - name: EMAIL_SERVER_USER
+              value: {{ .Values.calcom.secrets.email.serverUser }}
+            - name: EMAIL_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: email-password
+            {{- end }}
+            {{- if .Values.calcom.secrets.google.apiCredentials }}
+            - name: GOOGLE_API_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: google-api-credentials
+            {{- end }}
+            {{- if .Values.calcom.secrets.microsoft.graphClientId }}
+            - name: MS_GRAPH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: ms-graph-client-id
+            - name: MS_GRAPH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: ms-graph-client-secret
+            {{- end }}
+            {{- if .Values.calcom.secrets.zoom.clientId }}
+            - name: ZOOM_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: zoom-client-id
+            - name: ZOOM_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calcom.secretName" . }}
+                  key: zoom-client-secret
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

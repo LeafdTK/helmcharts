@@ -1,0 +1,176 @@
+---
+# values.yaml
+# Default values for calcom
+replicaCount: 2
+
+image:
+  repository: calcom/cal.com
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: cal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: calcom-tls
+      hosts:
+        - cal.example.com
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Cal.com specific configuration
+calcom:
+  # License configuration
+  license:
+    consent: ""
+    key: ""
+    
+  # Application URLs
+  config:
+    webappUrl: "https://cal.example.com"
+    apiV2Url: "http://localhost:5555/api/v2"
+    nextAuthUrl: ""  # Auto-generated from webappUrl if empty
+    websiteTermsUrl: "https://cal.com/terms"
+    websitePrivacyPolicyUrl: "https://cal.com/privacy"
+    nodeEnv: "production"
+    
+  # Telemetry
+  telemetry:
+    disabled: "1"
+    
+  # Database configuration
+  database:
+    # Use external database (recommended for production)
+    external: false
+    host: ""
+    port: 5432
+    name: "calendso"
+    user: "postgres"
+    # Password will be taken from secrets
+    existingSecret: ""
+    passwordKey: "database-password"
+    directUrl: ""  # For connection poolers like PgBouncer
+    
+  # Secrets configuration
+  secrets:
+    # Create secrets automatically or use existing ones
+    create: true
+    existingSecret: ""
+    
+    # Core secrets (will be auto-generated if not provided)
+    nextAuthSecret: ""
+    encryptionKey: ""
+    
+    # Email configuration
+    email:
+      from: "notifications@example.com"
+      fromName: "Cal.com"
+      serverHost: ""
+      serverPort: "587"
+      serverUser: ""
+      serverPassword: ""
+    
+    # Integration secrets (optional)
+    google:
+      apiCredentials: ""
+    
+    microsoft:
+      graphClientId: ""
+      graphClientSecret: ""
+      
+    zoom:
+      clientId: ""
+      clientSecret: ""
+
+# PostgreSQL subchart configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "changeme"
+    username: "unicorn_user"
+    password: "magical_password"
+    database: "calendso"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+# Prisma Studio (optional, for development)
+prismaStudio:
+  enabled: false
+  service:
+    type: ClusterIP
+    port: 5555
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    hosts:
+      - host: studio.cal.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []

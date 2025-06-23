@@ -1,0 +1,47 @@
+{{- if .Values.prismaStudio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "calcom.fullname" . }}-studio
+  labels:
+    {{- include "calcom.labels" . | nindent 4 }}
+    app.kubernetes.io/component: studio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "calcom.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: studio
+  template:
+    metadata:
+      labels:
+        {{- include "calcom.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: studio
+    spec:
+      serviceAccountName: {{ include "calcom.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: prisma-studio
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["npx", "prisma", "studio"]
+          ports:
+            - name: http
+              containerPort: 5555
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              value: {{ include "calcom.databaseUrl" . }}
+            - name: DATABASE_DIRECT_URL
+              value: {{ include "calcom.databaseDirectUrl" . }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+{{- end }}

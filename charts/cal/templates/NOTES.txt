@@ -1,0 +1,54 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "calcom.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "calcom.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "calcom.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "calcom.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Cal.com is starting up. You can check the status with:
+   kubectl get pods -l app.kubernetes.io/name={{ include "calcom.name" . }}
+
+3. To see the logs:
+   kubectl logs -f deployment/{{ include "calcom.fullname" . }}
+
+4. The initial setup wizard will guide you through creating your first user.
+
+5. Configure your integrations (Google Calendar, Zoom, etc.) through the Cal.com interface
+   or by updating the Helm values with your API credentials.
+
+{{- if .Values.prismaStudio.enabled }}
+
+6. Prisma Studio is available at:
+{{- if .Values.prismaStudio.ingress.enabled }}
+{{- range $host := .Values.prismaStudio.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.prismaStudio.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "calcom.fullname" . }}-studio 5555:5555
+  Then visit http://localhost:5555
+{{- end }}
+{{- end }}
+
+Important Security Notes:
+- Change default passwords in production
+- Configure proper secrets management
+- Review and update ingress security settings
+- Consider disabling Prisma Studio in production
