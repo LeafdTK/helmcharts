@@ -74,41 +74,20 @@ spec:
             - name: CALCOM_LICENSE_KEY
               value: {{ .Values.calcom.license.key | quote }}
             
-            {{- if .Values.calcom.secrets.existingSecret }}
-            {{- if (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) }}
-            {{- $secret := (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) -}}
-            {{- if index $secret.data "database-url" }}
+            # Database configuration - FIXED
+            # Always try to use database-url from secret first
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.calcom.secrets.existingSecret }}
+                  name: {{ include "calcom.secretName" . }}
                   key: database-url
-            {{- else }}
-            - name: DATABASE_URL
-              value: {{ include "calcom.databaseUrl" . }}
-            {{- end }}
-            {{- if index $secret.data "database-direct-url" }}
+                  optional: false
             - name: DATABASE_DIRECT_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.calcom.secrets.existingSecret }}
+                  name: {{ include "calcom.secretName" . }}
                   key: database-direct-url
-            {{- else }}
-            - name: DATABASE_DIRECT_URL
-              value: {{ include "calcom.databaseDirectUrl" . }}
-            {{- end }}
-            {{- else }}
-            - name: DATABASE_URL
-              value: {{ include "calcom.databaseUrl" . }}
-            - name: DATABASE_DIRECT_URL
-              value: {{ include "calcom.databaseDirectUrl" . }}
-            {{- end }}
-            {{- else }}
-            - name: DATABASE_URL
-              value: {{ include "calcom.databaseUrl" . }}
-            - name: DATABASE_DIRECT_URL
-              value: {{ include "calcom.databaseDirectUrl" . }}
-            {{- end }}
+                  optional: true
             
             - name: DATABASE_HOST
               value: {{ include "calcom.databaseHost" . }}
@@ -125,6 +104,7 @@ spec:
                   name: {{ include "calcom.secretName" . }}
                   key: encryption-key
             
+            # Additional configuration from values
             {{- if .Values.calcom.additionalConfig }}
             {{- range $key, $value := .Values.calcom.additionalConfig }}
             - name: {{ $key }}
@@ -132,6 +112,7 @@ spec:
             {{- end }}
             {{- end }}
             
+            # Integration configurations
             {{- if .Values.calcom.secrets.email.serverHost }}
             - name: EMAIL_FROM
               value: {{ .Values.calcom.secrets.email.from }}
