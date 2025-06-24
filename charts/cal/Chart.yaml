@@ -2,7 +2,7 @@ apiVersion: v2
 name: calcom
 description: A Helm chart for Cal.com - The open source Calendly alternative
 type: application
-version: 0.1.3
+version: 0.1.4
 appVersion: "latest"
 home: https://cal.com
 sources:

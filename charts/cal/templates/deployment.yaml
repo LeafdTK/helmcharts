@@ -25,56 +25,61 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "calcom.serviceAccountName" . }}
-      # CRITICAL: Pod security context
+      # Pod security context - fsGroup handles permissions
       securityContext:
         fsGroup: 1000
-        fsGroupChangePolicy: "OnRootMismatch"
+        fsGroupChangePolicy: "Always"
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
-      # CRITICAL: Init container to fix all permissions
+      # Init container running as non-root user 1000
       initContainers:
-        - name: fix-permissions
+        - name: setup-app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           command: 
             - sh
             - -c
             - |
-              echo "🔧 Fixing all Cal.com permissions..."
+              echo "🔧 Setting up Cal.com application (non-root)..."
               
-              # Copy application files to writable volume
+              # Copy application files (fsGroup ensures we can write)
               echo "📁 Copying application files..."
               cp -r /calcom/* /app/ 2>/dev/null || true
               
-              # Fix ownership and permissions
-              echo "🔒 Setting proper ownership..."
-              chown -R 1000:1000 /app
-              chmod -R 755 /app
+              # Create necessary directories
+              echo "📂 Creating directories..."
+              mkdir -p /app/.yarn/cache
+              mkdir -p /app/.yarn/global  
+              mkdir -p /app/node_modules
+              mkdir -p /app/apps/web/.next
+              mkdir -p /app/apps/web/public
+              mkdir -p /app/tmp
               
-              # Specifically fix critical directories
-              echo "📂 Fixing critical directories..."
-              mkdir -p /app/.yarn/cache /app/.yarn/global /app/node_modules
-              mkdir -p /app/apps/web/.next /app/apps/web/public
+              # Set permissions (fsGroup makes this work)
+              echo "🔒 Setting permissions..."
+              chmod -R 755 /app/.yarn || true
+              chmod -R 755 /app/apps/web/.next || true
+              chmod -R 755 /app/node_modules || true
+              chmod -R 755 /app/tmp || true
               
-              # Make all directories writable by the app user
-              chmod -R 775 /app/.yarn
-              chmod -R 775 /app/apps/web/.next
-              chmod -R 775 /app/apps/web/public
-              chmod -R 775 /app/node_modules
+              # Remove any problematic files
+              echo "🧹 Cleaning up..."
+              rm -f /app/.yarn/install-state.gz || true
+              rm -f /app/yarn.lock || true
               
-              # Remove any existing lock files
-              rm -f /app/.yarn/install-state.gz
-              rm -f /app/yarn.lock
-              rm -f /app/package-lock.json
+              # Create a marker file to indicate setup is complete
+              touch /app/.setup-complete
               
-              # Set proper ownership again
-              chown -R 1000:1000 /app
-              
-              echo "✅ Permissions fixed successfully"
+              echo "✅ Setup completed successfully"
           securityContext:
-            runAsUser: 0  # Run as root to fix permissions
-            runAsGroup: 0
-            allowPrivilegeEscalation: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
           volumeMounts:
             - name: app-volume
               mountPath: /app
@@ -91,31 +96,38 @@ spec:
             runAsGroup: 1000
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # CRITICAL: Set working directory to writable volume
           workingDir: /app
           ports:
             - name: http
               containerPort: 3000
               protocol: TCP
-          # Improved health checks with longer timeouts
+          # Startup probe to handle long initialization
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30  # Allow up to 5 minutes for startup
           livenessProbe:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 120  # Longer initial delay for first setup
+            initialDelaySeconds: 10
             periodSeconds: 30
-            timeoutSeconds: 15
-            failureThreshold: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 60
+            initialDelaySeconds: 5
             periodSeconds: 10
-            timeoutSeconds: 10
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 3
           env:
-            # CRITICAL: Override built-in URL to prevent replacement
+            # CRITICAL: Prevent URL replacement by making them match
             - name: BUILT_NEXT_PUBLIC_WEBAPP_URL
               value: {{ .Values.calcom.config.webappUrl }}
             
@@ -139,7 +151,7 @@ spec:
             - name: CALCOM_LICENSE_KEY
               value: {{ .Values.calcom.license.key | quote }}
             
-            # File system configuration
+            # File system configuration for writable directories
             - name: YARN_CACHE_FOLDER
               value: "/app/.yarn/cache"
             - name: YARN_GLOBAL_FOLDER
@@ -150,6 +162,8 @@ spec:
               value: "/app"
             - name: TMPDIR
               value: "/app/tmp"
+            - name: XDG_CACHE_HOME
+              value: "/app/.cache"
             
             # Database configuration
             - name: DATABASE_URL
@@ -157,7 +171,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "calcom.secretName" . }}
                   key: database-url
-                  optional: false
             - name: DATABASE_DIRECT_URL
               valueFrom:
                 secretKeyRef:
@@ -236,22 +249,15 @@ spec:
                   name: {{ include "calcom.secretName" . }}
                   key: zoom-client-secret
             {{- end }}
-          # CRITICAL: Mount writable volume
           volumeMounts:
             - name: app-volume
               mountPath: /app
-            - name: tmp-volume
-              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      # CRITICAL: Volumes for writable file system
       volumes:
         - name: app-volume
           emptyDir:
-            sizeLimit: 10Gi  # Increased size for full app
-        - name: tmp-volume
-          emptyDir:
-            sizeLimit: 1Gi
+            sizeLimit: 8Gi
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
