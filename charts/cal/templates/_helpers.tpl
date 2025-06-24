@@ -75,9 +75,23 @@ Create the database URL
 */}}
 {{- define "calcom.databaseUrl" -}}
 {{- if .Values.postgresql.enabled }}
-{{- printf "postgresql://%s:%s@%s-postgresql:%d/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password .Release.Name (.Values.postgresql.primary.service.ports.postgresql | default 5432) .Values.postgresql.auth.database }}
+{{- printf "postgresql://%s:%s@%s-postgresql:%d/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password .Release.Name (int (.Values.postgresql.primary.service.ports.postgresql | default 5432)) .Values.postgresql.auth.database }}
 {{- else if .Values.calcom.database.external }}
-{{- printf "postgresql://%s:%s@%s:%d/%s" .Values.calcom.database.user .Values.calcom.database.password .Values.calcom.database.host (.Values.calcom.database.port | default 5432) .Values.calcom.database.name }}
+{{- if .Values.calcom.secrets.existingSecret }}
+{{- /* Use secret-based DATABASE_URL if available */ -}}
+{{- if (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) }}
+{{- $secret := (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) -}}
+{{- if index $secret.data "database-url" }}
+{{- index $secret.data "database-url" | b64dec }}
+{{- else }}
+{{- printf "postgresql://%s:%s@%s:%d/%s?sslmode=require" .Values.calcom.database.user .Values.calcom.database.password .Values.calcom.database.host (int .Values.calcom.database.port) .Values.calcom.database.name }}
+{{- end }}
+{{- else }}
+{{- printf "postgresql://%s:%s@%s:%d/%s?sslmode=require" .Values.calcom.database.user .Values.calcom.database.password .Values.calcom.database.host (int .Values.calcom.database.port) .Values.calcom.database.name }}
+{{- end }}
+{{- else }}
+{{- printf "postgresql://%s:%s@%s:%d/%s?sslmode=require" .Values.calcom.database.user .Values.calcom.database.password .Values.calcom.database.host (int .Values.calcom.database.port) .Values.calcom.database.name }}
+{{- end }}
 {{- else }}
 {{- required "Database configuration is required" "" }}
 {{- end }}
@@ -89,10 +103,23 @@ Create the database direct URL
 {{- define "calcom.databaseDirectUrl" -}}
 {{- if .Values.calcom.database.directUrl }}
 {{- .Values.calcom.database.directUrl }}
+{{- else if .Values.calcom.secrets.existingSecret }}
+{{- /* Use secret-based DATABASE_DIRECT_URL if available */ -}}
+{{- if (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) }}
+{{- $secret := (lookup "v1" "Secret" .Release.Namespace .Values.calcom.secrets.existingSecret) -}}
+{{- if index $secret.data "database-direct-url" }}
+{{- index $secret.data "database-direct-url" | b64dec }}
+{{- else }}
+{{- include "calcom.databaseUrl" . }}
+{{- end }}
+{{- else }}
+{{- include "calcom.databaseUrl" . }}
+{{- end }}
 {{- else }}
 {{- include "calcom.databaseUrl" . }}
 {{- end }}
 {{- end }}
+
 
 {{/*
 Create the database host
