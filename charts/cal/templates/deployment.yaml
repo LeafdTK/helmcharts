@@ -25,35 +25,100 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "calcom.serviceAccountName" . }}
+      # CRITICAL: Pod security context
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      # CRITICAL: Init container to fix all permissions
+      initContainers:
+        - name: fix-permissions
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: 
+            - sh
+            - -c
+            - |
+              echo "🔧 Fixing all Cal.com permissions..."
+              
+              # Copy application files to writable volume
+              echo "📁 Copying application files..."
+              cp -r /calcom/* /app/ 2>/dev/null || true
+              
+              # Fix ownership and permissions
+              echo "🔒 Setting proper ownership..."
+              chown -R 1000:1000 /app
+              chmod -R 755 /app
+              
+              # Specifically fix critical directories
+              echo "📂 Fixing critical directories..."
+              mkdir -p /app/.yarn/cache /app/.yarn/global /app/node_modules
+              mkdir -p /app/apps/web/.next /app/apps/web/public
+              
+              # Make all directories writable by the app user
+              chmod -R 775 /app/.yarn
+              chmod -R 775 /app/apps/web/.next
+              chmod -R 775 /app/apps/web/public
+              chmod -R 775 /app/node_modules
+              
+              # Remove any existing lock files
+              rm -f /app/.yarn/install-state.gz
+              rm -f /app/yarn.lock
+              rm -f /app/package-lock.json
+              
+              # Set proper ownership again
+              chown -R 1000:1000 /app
+              
+              echo "✅ Permissions fixed successfully"
+          securityContext:
+            runAsUser: 0  # Run as root to fix permissions
+            runAsGroup: 0
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: app-volume
+              mountPath: /app
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # CRITICAL: Set working directory to writable volume
+          workingDir: /app
           ports:
             - name: http
               containerPort: 3000
               protocol: TCP
+          # Improved health checks with longer timeouts
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
-            initialDelaySeconds: 30
+            initialDelaySeconds: 120  # Longer initial delay for first setup
             periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 15
+            failureThreshold: 10
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 60
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           env:
+            # CRITICAL: Override built-in URL to prevent replacement
+            - name: BUILT_NEXT_PUBLIC_WEBAPP_URL
+              value: {{ .Values.calcom.config.webappUrl }}
+            
             # Cal.com configuration
             - name: NEXT_PUBLIC_WEBAPP_URL
               value: {{ .Values.calcom.config.webappUrl }}
@@ -74,8 +139,19 @@ spec:
             - name: CALCOM_LICENSE_KEY
               value: {{ .Values.calcom.license.key | quote }}
             
-            # Database configuration - FIXED
-            # Always try to use database-url from secret first
+            # File system configuration
+            - name: YARN_CACHE_FOLDER
+              value: "/app/.yarn/cache"
+            - name: YARN_GLOBAL_FOLDER
+              value: "/app/.yarn/global"
+            - name: YARN_INSTALL_STATE_PATH
+              value: "/app/.yarn/install-state.gz"
+            - name: HOME
+              value: "/app"
+            - name: TMPDIR
+              value: "/app/tmp"
+            
+            # Database configuration
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -88,7 +164,6 @@ spec:
                   name: {{ include "calcom.secretName" . }}
                   key: database-direct-url
                   optional: true
-            
             - name: DATABASE_HOST
               value: {{ include "calcom.databaseHost" . }}
             
@@ -161,8 +236,22 @@ spec:
                   name: {{ include "calcom.secretName" . }}
                   key: zoom-client-secret
             {{- end }}
+          # CRITICAL: Mount writable volume
+          volumeMounts:
+            - name: app-volume
+              mountPath: /app
+            - name: tmp-volume
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      # CRITICAL: Volumes for writable file system
+      volumes:
+        - name: app-volume
+          emptyDir:
+            sizeLimit: 10Gi  # Increased size for full app
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
